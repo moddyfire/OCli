@@ -6,6 +6,8 @@ import io.kotest.matchers.shouldBe
 import ocli.*
 import java.io.File
 
+internal fun<B: Any> Builder<B>.build(vararg args: String) = build(args)
+
 class OCliTest : FunSpec({
 
     test("predefined types") {
@@ -37,7 +39,7 @@ class OCliTest : FunSpec({
 
         data class Data(
             val file: File,
-            @OCliSubcommand val sub: Sub
+            @OCliInnerMember val sub: Sub
         )
         val builder = OCli.builder<Data>()
         val data = builder.build("-x", "7", "--file=hello.txt",)
@@ -62,7 +64,7 @@ class OCliTest : FunSpec({
 
         data class Data(
             val x: Int,
-            @OCliSubcommand val sub: Version
+            @OCliInnerMember val sub: Version
         )
 
         val builder = OCli.builder<Data>()
@@ -96,8 +98,8 @@ class OCliTest : FunSpec({
     test("booleans alternate names") {
         data class Data(
             @OCliAlternateNames("-q") val quiet: Boolean=false,
-            @OCliAlternateNames("-v", overrideDefault = true) val verbose: Boolean=false,
-            @OCliAlternateNames("--json=true,--text=false", overrideDefault = true) val json: Boolean=false,
+            @OCliAlternateNames("-v", keepDefault = false) val verbose: Boolean=false,
+            @OCliAlternateNames("--json=true,--text=false", keepDefault = false) val json: Boolean=false,
             @OCliAlternateNames("+c") val ignoreCase: Boolean=true)
         OCli.builder<Data>().build() shouldBe Data()
         OCli.builder<Data>().build("-q") shouldBe Data(quiet=true)

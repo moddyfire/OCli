@@ -8,7 +8,7 @@ import kotlin.reflect.KType
 import kotlin.reflect.full.findAnnotation
 
 
-internal fun String.lastItem() = split(".").last()
+internal fun String.simpleName() = split(".").last()
 
 data class FieldId(val name: String, val type: KType, val parents: List<SubItemCreator> = listOf()) {
     fun withoutSub() = FieldId(name, type, parents.subList(0, parents.size -1 ))
@@ -17,7 +17,7 @@ data class FieldId(val name: String, val type: KType, val parents: List<SubItemC
 fun FieldId(param: KParameter) = FieldId(param.name!!, param.type)
 fun FieldId(base: FieldId, parent:SubItemCreator) = FieldId(base.name, base.type, base.parents + parent)
 
-class SubItemCreator(val field: FieldId, val builder: OCli.Builder<*>) {
+class SubItemCreator(val field: FieldId, val builder: Builder<*>) {
     fun create(parseResult: ParseResult): Pair<FieldId, Any> {
         try {
             return field to builder.create(parseResult)
@@ -36,12 +36,12 @@ sealed interface ItemParser {
 }
 
 abstract class DataItemParser<T>(val param: KParameter) : ItemParser {
-    override val field = FieldId(param.name!!, param.type)
+    override val field = FieldId(param)
 
     protected fun alternateName() = param.findAnnotation<OCliAlternateNames>()
         ?.names?.split(",")?.map { it.trim().split("=", limit = 2) }  ?: listOf()
 
-    protected fun overrideDefault() = param.findAnnotation<OCliAlternateNames>()?.overrideDefault ?: false
+    protected fun keepDefault() = param.findAnnotation<OCliAlternateNames>()?.keepDefault ?: true
 
     protected fun camel() = param.name?.split(camelCase)?.joinToString("-"){ it.lowercase()} ?: throw RuntimeException(param.toString())
     private val camelCase = Regex("(?<!(^|[A-Z]))(?=[A-Z])|(?<!^)(?=[A-Z][a-z])")
@@ -71,7 +71,7 @@ class BooleanItemParser(param: KParameter) : DataItemParser<Boolean>(param) {
             } else
                 throw OCliException("AlternateNames for ${field.name}: it is not clear if $name means 'true' or 'false")
         }
-        if (!overrideDefault()) {
+        if (keepDefault()) {
             val camel = camel()
             val camelTrue =  if (camel.length == 1) "-$camel" else "--$camel"
 
@@ -129,10 +129,10 @@ class PrimitiveItemParser<T>(param: KParameter, val converter: Converter<T>) :
 
     init {
 
-         val defaultName = if (overrideDefault())
-             listOf()
-         else
+         val defaultName = if (keepDefault())
              listOf(camel().let { if (it.length == 1) "-$it" else "--$it"} )
+         else
+             listOf()
 
         val withAnnotation = alternateName().filter{ it.size == 1}.map { it[0] }
         predefined = alternateName().filter{ it.size > 1}.associate { it[0] to converter.parse(it[1]) }
@@ -143,8 +143,6 @@ class PrimitiveItemParser<T>(param: KParameter, val converter: Converter<T>) :
     override fun toString(): String {
         return "ItemParser ${param.name} for ${param.type}"
     }
-
-
 }
 
 interface Converter<T> {
