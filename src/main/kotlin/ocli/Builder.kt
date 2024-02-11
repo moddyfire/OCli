@@ -3,11 +3,12 @@ package ocli
 import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
 import kotlin.reflect.KType
+import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.hasAnnotation
 import kotlin.reflect.full.primaryConstructor
 import kotlin.reflect.javaType
 
-class Builder<B : Any>(private val kClass: KClass<B>) {
+class Builder<out B : Any>(private val kClass: KClass<B>) {
 
     internal fun addConverter(id: String, converter: Converter<*>) = apply {
         moreConvertors.put(id, converter)
@@ -24,11 +25,14 @@ class Builder<B : Any>(private val kClass: KClass<B>) {
     internal val items: List<ItemParser> by lazy {
         params.flatMap { (name, it) ->
             val type: KType = it.type
-            val kClass = type.classifier as KClass<*>
-            if (it.hasAnnotation<OCliInnerMember>()) {
+            val kClass = it.kClass()
+            if (it.hasAnnotation<OCliOneOf>()) {
+                val optionClass = it.findAnnotation<OCliOneOf>()!!.descriptionClass
+                listOf(createCommandChoiceItem(it, optionClass))
+            }  else if (it.hasAnnotation<OCliInnerMember>()) {
                 val subBuilder = Builder(kClass as KClass<Any>)
-                val creater = SubItemCreator( FieldId(it), subBuilder)
-                subBuilder.items.map { item -> SubcommandItemParser<Any>(creater, item) }
+                val creater = InnerMemberCreator( FieldId(it), subBuilder)
+                subBuilder.items.map { item -> InnerMemberItemParser<Any>(creater, item) }
             } else if (type.toString().simpleName() == "Boolean") {
                 listOf(BooleanItemParser(it))
             } else if (kClass.java.isEnum) {
@@ -47,6 +51,15 @@ class Builder<B : Any>(private val kClass: KClass<B>) {
         }
     }
 
+    private fun KParameter.kClass() = type.classifier as KClass<*>
+
+    private fun createCommandChoiceItem(param: KParameter, optionClass: KClass<*>): ItemParser {
+        val choicesBuilder = Builder(optionClass)
+        val choices = choicesBuilder.params.mapValues { (name, param) ->
+            Builder(param.kClass())
+        }
+        return ChoiceItemParser<Any>(param, choices)
+    }
 
     fun parse(args: Array<out String>) : ParseResult {
 

@@ -30,21 +30,21 @@ class OCliTest : FunSpec({
     }
 
 
-    test("sub command") {
+    test("inner member") {
 
-        data class Sub(
+        data class Inner(
             val x: Int,
             val y: Int = 3,
         )
 
         data class Data(
             val file: File,
-            @OCliInnerMember val sub: Sub
+            @OCliInnerMember val sub: Inner
         )
         val builder = OCli.builder<Data>()
         val data = builder.build("-x", "7", "--file=hello.txt",)
 
-        data shouldBe Data(File("hello.txt"), Sub(7))
+        data shouldBe Data(File("hello.txt"), Inner(7))
     }
 
     test("version") {

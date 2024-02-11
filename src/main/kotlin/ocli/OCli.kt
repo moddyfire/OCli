@@ -11,13 +11,19 @@ import kotlin.system.exitProcess
  */
 annotation class OCliAlternateNames( val names: String, val keepDefault: Boolean = true)
 
-
 /**
  * Indicates that the Cli item is an object
  *
  * The inner member's items are flatenned in the Cli.
  */
 annotation class OCliInnerMember
+
+/**
+ * Indicates that the Cli item is an object
+ *
+ * The inner member's items are flatenned in the Cli.
+ */
+annotation class OCliOneOf(val descriptionClass: KClass<*> )
 
 
 /**
@@ -54,6 +60,10 @@ class OCliException(msg: String, val exitCode: Int = 1, cause: Throwable?=null) 
 
 typealias ParseResult = List<Pair<FieldId, Any>>
 
+
+interface OCliCommandChoice {
+}
+
 object OCli {
 
     /**
@@ -68,6 +78,9 @@ object OCli {
       builder<B>().main(args, mainProc)
     }
 
+    /**
+     * run main
+     */
     fun<B:Any> Builder<B>.main(args: Array<out String>, mainProc: (B) -> Unit) {
         val parsed = try {
              build(args)

@@ -7,28 +7,14 @@ import kotlin.reflect.KParameter
 import kotlin.reflect.KType
 import kotlin.reflect.full.findAnnotation
 
-
 internal fun String.simpleName() = split(".").last()
 
-data class FieldId(val name: String, val type: KType, val parents: List<SubItemCreator> = listOf()) {
+data class FieldId(val name: String, val type: KType, val parents: List<InnerMemberCreator> = listOf()) {
     fun withoutSub() = FieldId(name, type, parents.subList(0, parents.size -1 ))
 }
 
 fun FieldId(param: KParameter) = FieldId(param.name!!, param.type)
-fun FieldId(base: FieldId, parent:SubItemCreator) = FieldId(base.name, base.type, base.parents + parent)
-
-class SubItemCreator(val field: FieldId, val builder: Builder<*>) {
-    fun create(parseResult: ParseResult): Pair<FieldId, Any> {
-        try {
-            return field to builder.create(parseResult)
-        } catch (e:InvocationTargetException) {
-            if (e.targetException is OCliException)
-                throw e.cause!!
-            else
-                throw e
-        }
-    }
-}
+fun FieldId(base: FieldId, parent:InnerMemberCreator) = FieldId(base.name, base.type, base.parents + parent)
 
 sealed interface ItemParser {
     fun matchItems(args: List<String>) : Pair<Int, Any?>
@@ -47,10 +33,23 @@ abstract class DataItemParser<T>(val param: KParameter) : ItemParser {
     private val camelCase = Regex("(?<!(^|[A-Z]))(?=[A-Z])|(?<!^)(?=[A-Z][a-z])")
 }
 
-class SubcommandItemParser<T>( parent: SubItemCreator, val subItem: ItemParser) : ItemParser {
+class InnerMemberItemParser<T>(parent: InnerMemberCreator, val subItem: ItemParser) : ItemParser {
     override fun matchItems(args: List<String>): Pair<Int, Any?>  = subItem.matchItems(args)
     override val field = FieldId(subItem.field, parent)
 }
+
+class ChoiceItemParser<T>(param: KParameter, val options: Map<String, Builder<*>>) : DataItemParser<T>(param) {
+    override fun matchItems(args: List<String>): Pair<Int, Any?> {
+        val chosen = options.get(args[0])
+        if (chosen == null)
+            return 0 to null
+        else {
+            val command = chosen.build(args.subList(1, args.size).toTypedArray())
+            return args.size to command
+        }
+    }
+}
+
 
 class BooleanItemParser(param: KParameter) : DataItemParser<Boolean>(param) {
 
@@ -90,7 +89,6 @@ class BooleanItemParser(param: KParameter) : DataItemParser<Boolean>(param) {
             false -> return 1 to false
         }
     }
-
 }
 
 class PrimitiveItemParser<T>(param: KParameter, val converter: Converter<T>) :
@@ -144,6 +142,20 @@ class PrimitiveItemParser<T>(param: KParameter, val converter: Converter<T>) :
         return "ItemParser ${param.name} for ${param.type}"
     }
 }
+
+class InnerMemberCreator(val field: FieldId, val builder: Builder<*>) {
+    fun create(parseResult: ParseResult): Pair<FieldId, Any> {
+        try {
+            return field to builder.create(parseResult)
+        } catch (e:InvocationTargetException) {
+            if (e.targetException is OCliException)
+                throw e.cause!!
+            else
+                throw e
+        }
+    }
+}
+
 
 interface Converter<T> {
     fun parse(param: String) : T
