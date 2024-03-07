@@ -19,11 +19,18 @@ annotation class OCliAlternateNames( val names: String, val keepDefault: Boolean
 annotation class OCliInnerMember
 
 /**
- * Indicates that the Cli item is an object
+ * Indicates that the Cli is a command
  *
- * The inner member's items are flatenned in the Cli.
+ * @property descriptionClass is a class whose members will be treated as a choice.
  */
 annotation class OCliOneOf(val descriptionClass: KClass<*> )
+
+/**
+ * Indicates that the Cli is a choice
+ *
+ * @property noMinus is a class whose members will be treated as a choice.
+ */
+annotation class OCliArgument(val noMinus:Boolean = false, val maxSize:Int=1)
 
 
 /**
@@ -77,6 +84,14 @@ object OCli {
     inline fun <reified B : Any> main(args: Array<out String>, noinline mainProc: (B) -> Unit) {
       builder<B>().main(args, mainProc)
     }
+
+    private fun addConverter(id: String, converter: Converter<*>) { globalConvertors[id] = converter }
+
+    fun clearConverters() = globalConvertors.clear()
+    fun <T> addConverter(id: String, func: (String)-> T) = addConverter(id, Converter.of(func))
+    fun <T> addConverter(id: String, map : Map<String,T>, ignoreCase: Boolean = true) = addConverter(id, Converter.of(map, ignoreCase))
+
+    internal val globalConvertors = mutableMapOf<String, Converter<*> >()
 
     /**
      * run main

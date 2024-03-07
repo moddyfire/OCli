@@ -21,14 +21,19 @@ class Builder<out B : Any>(private val kClass: KClass<B>) {
     private val moreConvertors = mutableMapOf<String, Converter<*> >()
     private val params: Map<String, KParameter> = constructor.parameters.associateBy { it.name!! }
 
+
     @OptIn(ExperimentalStdlibApi::class)
     internal val items: List<ItemParser> by lazy {
+
         params.flatMap { (name, it) ->
             val type: KType = it.type
             val kClass = it.kClass()
             if (it.hasAnnotation<OCliOneOf>()) {
                 val optionClass = it.findAnnotation<OCliOneOf>()!!.descriptionClass
                 listOf(createCommandChoiceItem(it, optionClass))
+//            } else if (it.hasAnnotation<OCliArgument>()) {
+//                    val annotation = it.findAnnotation<OCliArgument>()!!
+//                    listOf(createArgument(it, annotation.noMinus, annotation.maxSize))
             }  else if (it.hasAnnotation<OCliInnerMember>()) {
                 val subBuilder = Builder(kClass as KClass<Any>)
                 val creater = InnerMemberCreator( FieldId(it), subBuilder)
@@ -41,15 +46,21 @@ class Builder<out B : Any>(private val kClass: KClass<B>) {
                 val converter: Converter<Enum<*>> = Converter.of(values.associateBy { it.name })
                 listOf(PrimitiveItemParser(it, converter))
             } else {
+                val converters = listOf(moreConvertors, OCli.globalConvertors, builtInConverters)
                 val searchItems = listOf(name, type.javaType.typeName, type.toString(), type.toString().simpleName())
                     .map { it.removeSuffix("?") }.distinct()
-                val converter = searchItems.mapNotNull { moreConvertors[it] ?: convertorsByType[it] }.firstOrNull()
+                val converter = searchItems.mapNotNull { converters[it] }.firstOrNull()
 
                 require(converter != null) { "no convertors defined for $name of type ${type}" }
                 listOf(PrimitiveItemParser(it, converter))
             }
-        }
+        }.apply { verify(this) }
     }
+
+   private fun verify(itemParsers: List<ItemParser>) {
+       itemParsers.count { it is ChoiceItemParser<*> }.takeIf{ it >= 2 }?.let { throw OCliException("There can be at most one @OCliOneOf, but there are $it") }
+   }
+
 
     private fun KParameter.kClass() = type.classifier as KClass<*>
 
@@ -62,6 +73,8 @@ class Builder<out B : Any>(private val kClass: KClass<B>) {
     }
 
     fun parse(args: Array<out String>) : ParseResult {
+
+        items //to apply verify()
 
         val result: MutableList<Pair<FieldId, Any>> = mutableListOf()
 

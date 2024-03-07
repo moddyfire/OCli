@@ -9,6 +9,10 @@ import kotlin.reflect.full.findAnnotation
 
 internal fun String.simpleName() = split(".").last()
 
+internal operator fun<K,V> List<Map<K,V>>.get(key: K): V? {
+    return map { it[key]}.firstNotNullOfOrNull { it }
+}
+
 data class FieldId(val name: String, val type: KType, val parents: List<InnerMemberCreator> = listOf()) {
     fun withoutSub() = FieldId(name, type, parents.subList(0, parents.size -1 ))
 }
@@ -49,6 +53,20 @@ class ChoiceItemParser<T>(param: KParameter, val options: Map<String, Builder<*>
         }
     }
 }
+
+//class ArgumentItemParser<T>(param: KParameter, val noMinus: Boolean, val maxItems: Int) : DataItemParser<T>(param) {
+//
+//
+//    override fun matchItems(args: List<String>): Pair<Int, Any?> {
+//        val chosen = options.get(args[0])
+//        if (chosen == null)
+//            return 0 to null
+//        else {
+//            val command = chosen.build(args.subList(1, args.size).toTypedArray())
+//            return args.size to command
+//        }
+//    }
+//}
 
 
 class BooleanItemParser(param: KParameter) : DataItemParser<Boolean>(param) {
@@ -177,7 +195,7 @@ interface Converter<T> {
     }
 }
 
-internal val convertorsByType: Map<String, Converter<*> > = mapOf(
+internal val builtInConverters: Map<String, Converter<*> > = mapOf(
     "String" to Converter.of{x -> x},
     "Short" to Converter.of(String::toShort),
     "Int" to Converter.of(String::toInt),

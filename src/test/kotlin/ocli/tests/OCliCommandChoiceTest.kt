@@ -14,7 +14,6 @@ data class PullCommand(val target: String): Command
 class OCliCommandChoiceTest : FunSpec({
 
     test("sub command") {
-
         data class Commands(
             val push: PushCommand,
             val pull: PullCommand
@@ -29,6 +28,24 @@ class OCliCommandChoiceTest : FunSpec({
 
         data shouldBe Data(1, PushCommand("Alice"))
     }
+
+    test("two sub command must fail") {
+        data class Commands(
+            val push: PushCommand,
+            val pull: PullCommand
+        )
+
+        data class Data(
+            val count: Int,
+            @OCliOneOf(Commands::class) val cmd: Command,
+            @OCliOneOf(Commands::class) val otherCmd: Command
+        )
+        val e = shouldThrow<OCliException> {
+            OCli.builder<Data>().build()
+        }
+        e.message shouldBe "There can be at most one @OCliOneOf, but there are 2"
+     }
+
 
 })
 

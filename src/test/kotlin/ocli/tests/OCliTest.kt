@@ -128,6 +128,22 @@ class OCliTest : FunSpec({
             .build("--two") shouldBe Data(2)
     }
 
+    test("global converter") {
+
+        try {
+            data class Data(val number: Int)
+
+            OCli.addConverter("number") { it.toInt() + 3 }
+            OCli.builder<Data>().build("--number", "7") shouldBe Data(10)
+
+            OCli.addConverter("number") { it.toInt() - 3 }
+            OCli.builder<Data>().build("--number", "7") shouldBe Data(4)
+
+        } finally {
+            OCli.clearConverters()
+        }
+    }
+
     test("custom converter by name") {
 
         data class Data(val number: Int)
