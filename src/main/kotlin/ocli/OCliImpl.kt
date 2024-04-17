@@ -1,13 +1,25 @@
 package ocli
 
-
 import java.io.File
 import java.lang.reflect.InvocationTargetException
 import kotlin.reflect.KParameter
+import kotlin.reflect.KProperty1
 import kotlin.reflect.KType
 import kotlin.reflect.full.findAnnotation
+import kotlin.reflect.full.memberProperties
 
 internal fun String.simpleName() = split(".").last()
+
+
+
+sealed interface Creator<T, out H: Any> {
+    fun associatedNames() : List<String>
+    fun matchItems(args: List<String>) : Pair<Int, T?>
+
+    fun write( defaults: Map<String, Any?>, hostObject: @UnsafeVariance H) : List<String>
+
+    val field: FieldId
+}
 
 internal operator fun<K,V> List<Map<K,V>>.get(key: K): V? {
     return map { it[key]}.firstNotNullOfOrNull { it }
@@ -20,13 +32,12 @@ data class FieldId(val name: String, val type: KType, val parents: List<InnerMem
 fun FieldId(param: KParameter) = FieldId(param.name!!, param.type)
 fun FieldId(base: FieldId, parent:InnerMemberCreator) = FieldId(base.name, base.type, base.parents + parent)
 
-sealed interface ItemParser {
-    fun matchItems(args: List<String>) : Pair<Int, Any?>
-    val field: FieldId
-}
 
-abstract class DataItemParser<T>(val param: KParameter) : ItemParser {
+
+abstract class DataItemParser<T, H:Any>(val param: KParameter, val host: Builder<H>) : Creator<T,H> {
     override val field = FieldId(param)
+
+    val asProperty: KProperty1<H, T> = host.kClass.memberProperties.first{ it.name == param.name} as KProperty1<H, T>
 
     protected fun alternateName() = param.findAnnotation<OCliAlternateNames>()
         ?.names?.split(",")?.map { it.trim().split("=", limit = 2) }  ?: listOf()
@@ -37,39 +48,55 @@ abstract class DataItemParser<T>(val param: KParameter) : ItemParser {
     private val camelCase = Regex("(?<!(^|[A-Z]))(?=[A-Z])|(?<!^)(?=[A-Z][a-z])")
 }
 
-class InnerMemberItemParser<T>(parent: InnerMemberCreator, val subItem: ItemParser) : ItemParser {
-    override fun matchItems(args: List<String>): Pair<Int, Any?>  = subItem.matchItems(args)
+class InnerMemberItemParser<T,H:Any>(parent: InnerMemberCreator, val subItem: Creator<T,*>) : Creator<T,H> {
+
+
+    override fun write(defaults: Map<String, Any?>, hostObject: H): List<String> {
+        val value = asProperty.invoke(hostObject)
+
+
+    }
+
+    override fun associatedNames(): List<String>  = subItem.associatedNames()
+
+    override fun matchItems(args: List<String>): Pair<Int, T?> = subItem.matchItems(args)
+
     override val field = FieldId(subItem.field, parent)
+
 }
 
-class ChoiceItemParser<T>(param: KParameter, val options: Map<String, Builder<*>>) : DataItemParser<T>(param) {
-    override fun matchItems(args: List<String>): Pair<Int, Any?> {
+class ChoiceItemParser<T,H:Any>(param: KParameter, host: Builder<H>, val options: Map<String, Builder<*>>)
+    : DataItemParser<T, H>(param, host)
+{
+    override fun associatedNames() = options.keys.toList()
+
+    override fun matchItems(args: List<String>): Pair<Int, T?> {
         val chosen = options.get(args[0])
         if (chosen == null)
             return 0 to null
         else {
-            val command = chosen.build(args.subList(1, args.size).toTypedArray())
+            val command = chosen.build(args.subList(1, args.size).toTypedArray()) as T?
             return args.size to command
         }
     }
+
+    override fun write(defaults: Map<String, Any?>, hostObject: H): List<String> {
+        TODO("Not yet implemented")
+    }
+
 }
 
-//class ArgumentItemParser<T>(param: KParameter, val noMinus: Boolean, val maxItems: Int) : DataItemParser<T>(param) {
-//
-//
-//    override fun matchItems(args: List<String>): Pair<Int, Any?> {
-//        val chosen = options.get(args[0])
-//        if (chosen == null)
-//            return 0 to null
-//        else {
-//            val command = chosen.build(args.subList(1, args.size).toTypedArray())
-//            return args.size to command
-//        }
-//    }
-//}
 
 
-class BooleanItemParser(param: KParameter) : DataItemParser<Boolean>(param) {
+class BooleanItemParser<H: Any>(param: KParameter, host: Builder<H>) : DataItemParser<Boolean,H>(param, host), Creator<Boolean, H> {
+
+
+    override fun associatedNames(): List<String> = paramNames.keys.toList()
+
+    override fun write(defaults: Map<String, Any?>, hostObject: H): List<String> {
+        val value = asProperty.invoke(hostObject)
+        return listOf(paramNames.entries.first{it.value == value}.key)
+    }
 
     val paramNames : Map<String, Boolean>
     init {
@@ -100,6 +127,7 @@ class BooleanItemParser(param: KParameter) : DataItemParser<Boolean>(param) {
         paramNames = map.toMap()
     }
 
+
     override fun matchItems(args: List<String>): Pair<Int, Boolean?> {
         when (paramNames[args[0]]) {
             null -> return 0 to null
@@ -107,12 +135,32 @@ class BooleanItemParser(param: KParameter) : DataItemParser<Boolean>(param) {
             false -> return 1 to false
         }
     }
+
 }
 
-class PrimitiveItemParser<T>(param: KParameter, val converter: Converter<T>) :
-    DataItemParser<T>(param) {
 
-    val names: Set<String>
+class PrimitiveCreator<T, H:Any>(param: KParameter, anyConverter: Converter<*>, host: Builder<H>)
+    : DataItemParser<T,H>(param, host),  Creator<T,H>
+{
+    val converter: Converter<T> = anyConverter as Converter<T>
+
+    override fun associatedNames(): List<String> = names + predefined.keys
+
+    override fun write(defaults: Map<String, Any?>, hostObject: H): List<String> {
+        val value = asProperty.invoke(hostObject)
+        if (param.name in defaults && defaults[param.name] == value)
+            return listOf()
+        else {
+            val p = predefined.entries.firstOrNull { it.value == value }
+            if ( p == null)
+//                return listOf( names.first(), value.toString())
+                  return listOf( "${names.first()}=$value")
+            else
+                return listOf(p.key)
+        }
+    }
+
+    val names: List<String>
     val predefined: Map<String, T>
 
     override fun matchItems(args: List<String>): Pair<Int, T?> {
@@ -144,7 +192,6 @@ class PrimitiveItemParser<T>(param: KParameter, val converter: Converter<T>) :
     }
 
     init {
-
          val defaultName = if (keepDefault())
              listOf(camel().let { if (it.length == 1) "-$it" else "--$it"} )
          else
@@ -153,7 +200,7 @@ class PrimitiveItemParser<T>(param: KParameter, val converter: Converter<T>) :
         val withAnnotation = alternateName().filter{ it.size == 1}.map { it[0] }
         predefined = alternateName().filter{ it.size > 1}.associate { it[0] to converter.parse(it[1]) }
 
-        names = (withAnnotation + defaultName).toSet()
+        names = (withAnnotation + defaultName).distinct()
     }
 
     override fun toString(): String {

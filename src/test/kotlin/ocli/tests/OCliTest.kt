@@ -6,6 +6,7 @@ import io.kotest.matchers.shouldBe
 import ocli.*
 import java.io.File
 
+
 internal fun<B: Any> Builder<B>.build(vararg args: String) = build(args)
 
 class OCliTest : FunSpec({
@@ -23,12 +24,26 @@ class OCliTest : FunSpec({
         val builder = OCli.builder<Data>()
 
         builder.build("--number-two", "7", "--file=hello.txt", "-S", "15", "--long=1") shouldBe
-                Data(numberTwo = 7, file = File("hello.txt"), long=1, myShort=15)
+                Data(numberTwo = 7, file = File("hello.txt"), long = 1, myShort = 15)
 
         builder.build("--number-two", "3", "-n", "John", "--long=5") shouldBe
-                Data(numberTwo = 3, n = "John", long=5)
-    }
+                Data(numberTwo = 3, n = "John", long = 5)
 
+
+        val writer = CommandLineWriter(builder, Data(numberTwo = 0, long = 100))
+
+        writer.toArgs(Data(1, File("hello.txt"), long = 2)) shouldBe listOf(
+            "--number-two=1",
+            "--file=hello.txt",
+            "--long=2"
+        )
+
+        writer.toArgs(Data(numberTwo = 0, file = null, long = 100, n = "Nothing")) shouldBe listOf(
+            "--number-two=0",
+            "--long=100"
+        )
+
+    }
 
     test("inner member") {
 
@@ -45,6 +60,14 @@ class OCliTest : FunSpec({
         val data = builder.build("-x", "7", "--file=hello.txt",)
 
         data shouldBe Data(File("hello.txt"), Inner(7))
+
+        val writer = CommandLineWriter(builder, data)
+
+        writer.toArgs(Data(File("world.txt"), Inner(1))) shouldBe listOf(
+            "-x=1",
+            "--file=world.txt"
+        )
+
     }
 
     test("version") {
